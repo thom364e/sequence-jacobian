@@ -1,9 +1,11 @@
 import numpy as np
 from numba import guvectorize
 
-from ..blocks.het_block import het
-from .. import interpolate
+# from ..src.sequence_jacobian.blocks.het_block import het
+# from ..src.sequence_jacobian import interpolate
 
+from sequence_jacobian.blocks.het_block import het
+from sequence_jacobian import interpolate
 
 def hh_init(b_grid, a_grid, z_grid, eis):
     Va = (0.6 + 1.1 * b_grid[:, np.newaxis] + a_grid) ** (-1 / eis) * np.ones((z_grid.shape[0], 1, 1))
@@ -101,6 +103,106 @@ def hh(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, ch
 
     # update derivatives of value function using envelope conditions
     Va = (1 + ra - Psi2) * uc
+    Vb = (1 + rb) * uc
+
+    return Va, Vb, a, b, c, uce
+
+def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, chi0, chi1, chi2, gamma, Psi1, debug=False):
+    # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
+    # (take discounted expectation of tomorrow's value function)
+    Wb = beta * Vb_p
+    Wa = beta * Va_p
+    W_ratio = Wa / Wb
+
+    if debug:
+        print(W_ratio.shape)
+
+    # === STEP 3: a'(z, b', a) for UNCONSTRAINED ===
+
+    # for each (z, b', a), linearly interpolate to find a' between gridpoints
+    # satisfying optimality condition W_ratio == (1 - gamma)+Psi1
+    i, pi = lhs_equals_rhs_interpolate(W_ratio, (1 - gamma) + Psi1)
+    if debug:
+        # print(f"Shape of i {pi}")
+        # print(f"Nan count i: {np.sum(np.isnan(i))}")
+        # print(f"Nan count pi: {np.sum(np.isnan(pi))}")
+        pass
+
+    # use same interpolation to get Wb and then c
+    a_endo_unc = interpolate.apply_coord(i, pi, a_grid)
+    c_endo_unc = interpolate.apply_coord(i, pi, Wb) ** (-eis)
+    
+    if debug: 
+        # print(f" a_endo_unc {a_endo_unc}")
+        print(f"Nan count for c {np.sum(np.isnan(c_endo_unc))}")
+        print(f"Nan count for a {np.sum(np.isnan(a_endo_unc))}")
+        if np.sum(np.isnan(c_endo_unc)) > 0:
+            print(c_endo_unc)
+
+    # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
+
+    # solve out budget constraint to get b(z, b', a)
+    b_endo = (c_endo_unc + (1-gamma)*a_endo_unc + addouter(-z_grid, b_grid, ((1 + rb)*gamma - (1 + ra)) * a_grid)
+              + get_Psi_and_deriv(a_endo_unc, a_grid, ra, chi0, chi1, chi2)[0]) / (1 + rb)
+
+    # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
+    # and also use interpolation to get a'(z, b, a)
+    # (note utils.interpolate.interpolate_coord and utils.interpolate.apply_coord work on last axis,
+    #  so we need to swap 'b' to the last axis, then back when done)
+    i, pi = interpolate.interpolate_coord(b_endo.swapaxes(1, 2), b_grid)
+    a_unc = interpolate.apply_coord(i, pi, a_endo_unc.swapaxes(1, 2)).swapaxes(1, 2)
+    b_unc = interpolate.apply_coord(i, pi, b_grid).swapaxes(1, 2)
+
+    # === STEP 5: a'(z, kappa, a) for CONSTRAINED ===
+
+    # for each (z, kappa, a), linearly interpolate to find a' between gridpoints
+    # satisfying optimality condition W_ratio/(1+kappa) == 1+Psi1, assuming b'=0
+    lhs_con = W_ratio[:, 0:1, :] / (1 + k_grid[np.newaxis, :, np.newaxis])
+    i, pi = lhs_equals_rhs_interpolate(lhs_con, (1 - gamma) + Psi1)
+
+    if debug:
+        # print(f"Shape of i for constrained {i.shape}")
+        # print(f"W_ratio {W_ratio[:, 0:1, :]}")
+        # print(f"W_ratio {W_ratio[:, 0:1, :]}")
+        pass
+
+    # use same interpolation to get Wb and then c
+    a_endo_con = interpolate.apply_coord(i, pi, a_grid)
+    c_endo_con = ((1 + k_grid[np.newaxis, :, np.newaxis]) ** (-eis)
+                  * interpolate.apply_coord(i, pi, Wb[:, 0:1, :]) ** (-eis))
+
+    # === STEP 6: a'(z, b, a) for CONSTRAINED ===
+
+    # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
+    b_endo = (c_endo_con + (1-gamma)*a_endo_con
+              + addouter(-z_grid, np.full(len(k_grid), b_grid[0]), ((1 + rb)*gamma - (1 + ra)) * a_grid)
+              + get_Psi_and_deriv(a_endo_con, a_grid, ra, chi0, chi1, chi2)[0]) / (1 + rb)
+
+    # interpolate this kappa -> b mapping to get b -> kappa
+    # then use the interpolated kappa to get a', so we have a'(z, b, a)
+    # (utils.interpolate.interpolate_y does this in one swoop, but since it works on last
+    #  axis, we need to swap kappa to last axis, and then b back to middle when done)
+    a_con = interpolate.interpolate_y(b_endo.swapaxes(1, 2), b_grid,
+                                      a_endo_con.swapaxes(1, 2)).swapaxes(1, 2)
+
+    # === STEP 7: obtain policy functions and update derivatives of value function ===
+
+    # combine unconstrained solution and constrained solution, choosing latter
+    # when unconstrained goes below minimum b
+    a, b = a_unc.copy(), b_unc.copy()
+    b[b <= b_grid[0]] = b_grid[0]
+    a[b <= b_grid[0]] = a_con[b <= b_grid[0]]
+
+    # calculate adjustment cost and its derivative
+    Psi, _, Psi2 = get_Psi_and_deriv(a, a_grid, ra, chi0, chi1, chi2)
+
+    # solve out budget constraint to get consumption and marginal utility
+    c = addouter(z_grid, (1 + rb) * b_grid, -((1 + rb)*gamma - (1 + ra)) * a_grid) - Psi - (1-gamma)*a - b
+    uc = c ** (-1 / eis)
+    uce = e_grid[:, np.newaxis, np.newaxis] * uc
+
+    # update derivatives of value function using envelope conditions
+    Va = (1 + ra - (1 + rb)*gamma - Psi2) * uc
     Vb = (1 + rb) * uc
 
     return Va, Vb, a, b, c, uce
