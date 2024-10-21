@@ -1,11 +1,13 @@
 import numpy as np
 from numba import guvectorize
+from scipy.interpolate import interp1d
+from numba import njit
 
 # from ..src.sequence_jacobian.blocks.het_block import het
 # from ..src.sequence_jacobian import interpolate
 
 from sequence_jacobian.blocks.het_block import het
-from sequence_jacobian import interpolate
+from sequence_jacobian import interpolate, grids
 
 def hh_init(b_grid, a_grid, z_grid, eis):
     Va = (0.6 + 1.1 * b_grid[:, np.newaxis] + a_grid) ** (-1 / eis) * np.ones((z_grid.shape[0], 1, 1))
@@ -107,7 +109,7 @@ def hh(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, ch
 
     return Va, Vb, a, b, c, uce
 
-def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, chi0, chi1, chi2, gamma, Psi1, debug=False):
+def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, bhat_grid, b_endo_2d_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, chi0, chi1, chi2, gamma, Psi1, debug=False):
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
     Wb = beta * Vb_p
@@ -142,16 +144,16 @@ def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb
     # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
 
     # solve out budget constraint to get b(z, b', a)
-    b_endo = (c_endo_unc + (1-gamma)*a_endo_unc + addouter(-z_grid, b_grid, ((1 + rb)*gamma - (1 + ra)) * a_grid)
+    b_endo = (c_endo_unc + (1-gamma)*a_endo_unc + addouter(-z_grid, bhat_grid, ((1 + rb)*gamma - (1 + ra)) * a_grid)
               + get_Psi_and_deriv(a_endo_unc, a_grid, ra, chi0, chi1, chi2)[0]) / (1 + rb)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
     # and also use interpolation to get a'(z, b, a)
     # (note utils.interpolate.interpolate_coord and utils.interpolate.apply_coord work on last axis,
     #  so we need to swap 'b' to the last axis, then back when done)
-    i, pi = interpolate.interpolate_coord(b_endo.swapaxes(1, 2), b_grid)
+    i, pi = interpolate.interpolate_coord(b_endo.swapaxes(1, 2), bhat_grid)
     a_unc = interpolate.apply_coord(i, pi, a_endo_unc.swapaxes(1, 2)).swapaxes(1, 2)
-    b_unc = interpolate.apply_coord(i, pi, b_grid).swapaxes(1, 2)
+    b_unc = interpolate.apply_coord(i, pi, bhat_grid).swapaxes(1, 2)
 
     # === STEP 5: a'(z, kappa, a) for CONSTRAINED ===
 
@@ -175,14 +177,14 @@ def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb
 
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
     b_endo = (c_endo_con + (1-gamma)*a_endo_con
-              + addouter(-z_grid, np.full(len(k_grid), b_grid[0]), ((1 + rb)*gamma - (1 + ra)) * a_grid)
+              + addouter(-z_grid, np.full(len(k_grid), bhat_grid[0]), ((1 + rb)*gamma - (1 + ra)) * a_grid)
               + get_Psi_and_deriv(a_endo_con, a_grid, ra, chi0, chi1, chi2)[0]) / (1 + rb)
 
     # interpolate this kappa -> b mapping to get b -> kappa
     # then use the interpolated kappa to get a', so we have a'(z, b, a)
     # (utils.interpolate.interpolate_y does this in one swoop, but since it works on last
     #  axis, we need to swap kappa to last axis, and then b back to middle when done)
-    a_con = interpolate.interpolate_y(b_endo.swapaxes(1, 2), b_grid,
+    a_con = interpolate.interpolate_y(b_endo.swapaxes(1, 2), bhat_grid,
                                       a_endo_con.swapaxes(1, 2)).swapaxes(1, 2)
 
     # === STEP 7: obtain policy functions and update derivatives of value function ===
@@ -190,14 +192,14 @@ def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb
     # combine unconstrained solution and constrained solution, choosing latter
     # when unconstrained goes below minimum b
     a, b = a_unc.copy(), b_unc.copy()
-    b[b <= b_grid[0]] = b_grid[0]
-    a[b <= b_grid[0]] = a_con[b <= b_grid[0]]
+    b[b <= bhat_grid[0]] = bhat_grid[0]
+    a[b <= bhat_grid[0]] = a_con[b <= bhat_grid[0]]
 
     # calculate adjustment cost and its derivative
     Psi, _, Psi2 = get_Psi_and_deriv(a, a_grid, ra, chi0, chi1, chi2)
 
     # solve out budget constraint to get consumption and marginal utility
-    c = addouter(z_grid, (1 + rb) * b_grid, -((1 + rb)*gamma - (1 + ra)) * a_grid) - Psi - (1-gamma)*a - b
+    c = addouter(z_grid, (1 + rb) * bhat_grid, -((1 + rb)*gamma - (1 + ra)) * a_grid) - Psi - (1-gamma)*a - b
     uc = c ** (-1 / eis)
     uce = e_grid[:, np.newaxis, np.newaxis] * uc
 
@@ -205,6 +207,8 @@ def hh_sandbox(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb
     Va = (1 + ra - (1 + rb)*gamma - Psi2) * uc
     Vb = (1 + rb) * uc
 
+    # _, c, a, b, Va, Vb, uce = bhat_to_b(a_grid, b_grid, bhat_grid, b_endo_2d_grid, e_grid, z_grid, a, c, Va, Vb, ra, rb, chi0, chi1, chi2, eis, gamma)
+    
     return Va, Vb, a, b, c, uce
 
 
@@ -281,4 +285,53 @@ def lhs_equals_rhs_interpolate(lhs, rhs, iout, piout):
             err_upper = rhs[i, j] - lhs[i]
             err_lower = rhs[i - 1, j] - lhs[i - 1]
             piout[j] = err_upper / (err_upper - err_lower)
-            
+
+# @njit           
+def bhat_to_b(a_grid, b_grid, bhat_grid, b_endo_2d_grid, e_grid, z_grid, a_bhat, c_bhat, Va_bhat, Vb_bhat, ra, rb, chi0, chi1, chi2, eis, gamma):
+    # bhat_to_b(gamma, b_grid, a_grid, c_bhat, a_bhat, bhat_grid, b_endo_2d_grid, z_grid, ra, rb, chi0, chi1, chi2, Va_bhat, Vb_bhat, e_grid, eis):
+    '''
+    Function to transform the a' and c policy functions from a'(z,bhat,a) and c(z,bhat,a) to a'(z,b,a) and c(z,b,a)
+    '''
+
+    nZ, nB, nA = c_bhat.shape
+    # print(nB)
+
+    # b_grid = np.zeros([nA,nB])
+    # # print(a_grid.shape)
+    # for j_a in range(nA):
+    #     # grid for b, starting from the borrowing constraint
+    #     print(grids.agrid(amax=bmax, n=nB, amin = -gamma_diff*a_grid[j_a]).shape)
+    #     b_grid[j_a,:] = grids.agrid(amax=bmax, n=nB, amin = -gamma_diff*a_grid[j_a])
+
+    # b_endo_temp = bhat_grid[None,:] - gamma*a_grid[:,None]
+    c = np.zeros_like(c_bhat)
+    a = np.zeros_like(a_bhat)
+    b = np.zeros_like(c_bhat)
+    Va = np.zeros_like(Va_bhat)
+    Vb = np.zeros_like(Vb_bhat)
+
+    for j_z in range(nZ):
+        for j_a in range(nA):
+            # Create the interpolation function for consumption 
+            interp_func_c = interp1d(b_endo_2d_grid[j_a, :], c_bhat[j_z, :, j_a], kind='linear', fill_value="extrapolate")
+            interp_func_a = interp1d(b_endo_2d_grid[j_a, :], a_bhat[j_z, :, j_a], kind='linear', fill_value="extrapolate")
+            interp_func_Va = interp1d(b_endo_2d_grid[j_a, :], Va_bhat[j_z, :, j_a], kind='linear', fill_value="extrapolate")
+            interp_func_Vb = interp1d(b_endo_2d_grid[j_a, :], Vb_bhat[j_z, :, j_a], kind='linear', fill_value="extrapolate")
+            # Use the interpolation function to get the interpolated values for the entire b_grid[j_a, :]
+            c[j_z, :, j_a] = interp_func_c(b_grid[j_a, :])
+            a[j_z, :, j_a] = interp_func_a(b_grid[j_a, :])
+            Va[j_z, :, j_a] = interp_func_Va(b_grid[j_a, :])
+            Vb[j_z, :, j_a] = interp_func_Vb(b_grid[j_a, :])
+
+    for j_z in range(nZ):
+        for j_a in range(nA):
+            for j_b in range(nB):
+                # Use the original budget constraint to back out b'(z,b,a)
+                b[j_z, j_b, j_a] = (z_grid[j_z] + (1 + ra) * a_grid[j_a] + (1 + rb) * b_grid[j_a, j_b]
+                                - a[j_z, j_b, j_a] - c[j_z, j_b, j_a]
+                                - get_Psi_and_deriv(a[j_z, j_b, j_a], a_grid[j_a], ra, chi0, chi1, chi2)[0])
+
+    uc = c ** (-1 / eis)
+    uce = e_grid[:, np.newaxis, np.newaxis] * uc
+
+    return b_grid, c, a, b, Va, Vb, uce
