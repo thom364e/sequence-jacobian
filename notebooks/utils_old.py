@@ -19,46 +19,22 @@ def house_mkt_clearing(HBAR, H):
     return house_mkt
 
 
-'''Part 2: Hetinput functions'''
 def make_grids(bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
     b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = 0.01)
     h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
-    e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
+    e_grid, _, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
 
-    # b_grid = np.zeros([nH,nB])
-    # for j_a in range(nH):
-    #     # grid for b, starting from the borrowing constraint
-    #     b_grid[j_a,:] = grids.agrid(amax=bmax, n=nB, amin = -qh_lag*gamma*h_bhat_grid[j_a])
+    b_grid = np.zeros([nH,nB])
+    for j_a in range(nH):
+        # grid for b, starting from the borrowing constraint
+        b_grid[j_a,:] = grids.agrid(amax=bmax, n=nB, amin = -qh_lag*gamma*h_bhat_grid[j_a])
 
-    return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, pi_e
-
-
-def transfers(pi_e, Div, Tax, e_grid):
-    # hardwired incidence rules are proportional to skill; scale does not matter 
-    tax_rule, div_rule = e_grid, e_grid
-    div = Div / np.sum(pi_e * div_rule) * div_rule
-    tax = Tax / np.sum(pi_e * tax_rule) * tax_rule
-    T = div - tax
-    return T
+    return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, b_grid
 
 
-def wages(w, e_grid):
-    we = w * e_grid
-    return we
-
-
-def income(e_grid, w, N, Div, Tax, pi_e):
-    # hardwired incidence rules are proportional to skill; scale does not matter 
-    tax_rule, div_rule = e_grid, e_grid
-    div = Div / np.sum(pi_e * div_rule) * div_rule
-    tax = Tax / np.sum(pi_e * tax_rule) * tax_rule
-    T = div - tax
-
-    # wage per effective unit of labor
-    labor_income = w * e_grid * N
-    z_grid = labor_income + T
-
+def income(e_grid, tax, w, N):
+    z_grid = (1 - tax) * w * N * e_grid
     return z_grid
 
 
