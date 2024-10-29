@@ -62,6 +62,37 @@ def income(e_grid, w, N, Div, Tax, pi_e):
     return z_grid
 
 
+'''Part 3: Hetoutput functions'''
+def compute_weighted_mpc(c, b, b_grid, r, e_grid):
+    """Approximate mpc out of wealth, with symmetric differences where possible, exactly setting mpc=1 for constrained agents."""
+    mpc = np.empty_like(c)
+    post_return = (1 + r) * b_grid
+    mpc[:, 1:-1, :] = (c[:, 2:,:] - c[:, 0:-2, :]) / (post_return[2:] - post_return[:-2])
+    mpc[:, 0, :] = (c[:, 1, :] - c[:, 0, :]) / (post_return[1] - post_return[0])
+    mpc[:, -1, :] = (c[:, -1, :] - c[:, -2, :]) / (post_return[-1] - post_return[-2])
+    mpc[b == b_grid[0]] = 1
+    mpc = mpc * e_grid[:, np.newaxis]
+    return mpc
+
+
+'''Part 4: Miscellaneous functions'''
+def show_irfs(irfs_list, variables, labels=[" "], ylabel=r"Percentage points (dev. from ss)", T_plot=50, figsize=(18, 6)):
+    if len(irfs_list) != len(labels):
+        labels = [" "] * len(irfs_list)
+    n_var = len(variables)
+    fig, ax = plt.subplots(1, n_var, figsize=figsize, sharex=True)
+    for i in range(n_var):
+        # plot all irfs
+        for j, irf in enumerate(irfs_list):
+            ax[i].plot(100 * irf[variables[i]][:50], label=labels[j])
+        ax[i].set_title(variables[i])
+        ax[i].set_xlabel(r"$t$")
+        if i==0:
+            ax[i].set_ylabel(ylabel)
+        ax[i].legend()
+    plt.show()
+
+'''Old functions'''
 def policy_ss(Pi, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, tol=1E-12, max_iter=10_000, debug = False):
     '''
     Iterates on the policy functions to find the steady state policy functions

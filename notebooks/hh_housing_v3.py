@@ -10,11 +10,11 @@ from sequence_jacobian.blocks.het_block import het
 from sequence_jacobian import interpolate, grids
 
 def hh_init(b_bhat_grid, h_bhat_grid, z_grid, sigma, theta):
-    # Vh_bhat = (0.6 + 1.1 * b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** ((1 - sigma)*(1 - theta)) * np.ones((z_grid.shape[0], 1, 1))
-    # Vb_bhat = (0.5 + b_bhat_grid[:, np.newaxis] + 1.2 * h_bhat_grid) ** ((1 - sigma)*(1 - theta)) * np.ones((z_grid.shape[0], 1, 1))
+    Vh_bhat = (0.6 + 1.1 * b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1/sigma) * np.ones((z_grid.shape[0], 1, 1))
+    Vb_bhat = (0.5 + b_bhat_grid[:, np.newaxis] + 1.2 * h_bhat_grid) ** (-1/sigma) * np.ones((z_grid.shape[0], 1, 1))
 
-    Vh_bhat = (0.1 + 1.5 * b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
-    Vb_bhat = (0.05 + b_bhat_grid[:, np.newaxis] + 1.6 * h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
+    # Vh_bhat = (0.1 + 1.5 * b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
+    # Vb_bhat = (0.05 + b_bhat_grid[:, np.newaxis] + 1.6 * h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
 
     # Vh_bhat = (b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
     # Vb_bhat = (b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
@@ -117,6 +117,94 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     uc = theta * c_bhat ** ((1-sigma)*theta - 1) * h_bhat_grid[np.newaxis, np.newaxis, :] ** ((1 - theta)*(1 - sigma))
     
     uh = (1 - theta) * (c_bhat**theta * h_bhat_grid[np.newaxis, np.newaxis, :]**(1-theta))**(-sigma) * (c_bhat**theta * h_bhat_grid[np.newaxis, np.newaxis, :]**(-theta))
+    
+    uce_bhat = e_grid[:, np.newaxis, np.newaxis] * uc
+
+    # update derivatives of value function using envelope conditions
+    Vh_bhat = (qh - (1 + r)*gamma*qh_lag - Psi2) * uc + uh
+    Vb_bhat = (1 + r) * uc
+
+    return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat
+
+# # policy and bacward order as in grid!
+@het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
+     hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
+def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1):
+    # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
+    # (take discounted expectation of tomorrow's value function)
+    Wb = beta * Vb_bhat_p
+    Wh = beta * Vh_bhat_p
+    W_ratio = Wh / Wb
+
+    # === STEP 3: a'(z, b', a) for UNCONSTRAINED ===
+
+    # for each (z, b', a), linearly interpolate to find h' between gridpoints
+    # satisfying optimality condition W_ratio == (1 - gamma)*qh + Psi1
+    i, pi = lhs_equals_rhs_interpolate(W_ratio, (1 - gamma)*qh + Psi1)
+
+    # use same interpolation to get Wb and then c
+    h_endo_unc = interpolate.apply_coord(i, pi, h_bhat_grid)
+
+    c_endo_unc = interpolate.apply_coord(i, pi, Wb) ** (-1/sigma)
+
+    # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
+
+    # solve out budget constraint to get b(z, b', h)
+    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
+              + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha)[0]) / (1 + r)
+
+    # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
+    # and also use interpolation to get a'(z, b, a)
+    # (note utils.interpolate.interpolate_coord and utils.interpolate.apply_coord work on last axis,
+    #  so we need to swap 'b' to the last axis, then back when done)
+    i, pi = interpolate.interpolate_coord(b_endo.swapaxes(1, 2), b_bhat_grid)
+    h_unc = interpolate.apply_coord(i, pi, h_endo_unc.swapaxes(1, 2)).swapaxes(1, 2)
+    b_unc = interpolate.apply_coord(i, pi, b_bhat_grid).swapaxes(1, 2)
+
+    # === STEP 5: a'(z, kappa, a) for CONSTRAINED ===
+
+    # for each (z, kappa, a), linearly interpolate to find a' between gridpoints
+    # satisfying optimality condition W_ratio/(1+kappa) == (1-gamma)*qh + Psi1, assuming bhat'=0
+    lhs_con = W_ratio[:, 0:1, :] / (1 + k_grid[np.newaxis, :, np.newaxis])
+    i, pi = lhs_equals_rhs_interpolate(lhs_con, (1 - gamma)*qh + Psi1)
+
+    # use same interpolation to get Wb and then c
+    h_endo_con = interpolate.apply_coord(i, pi, h_bhat_grid)
+    c_endo_con = ((1 + k_grid[np.newaxis, :, np.newaxis]) * interpolate.apply_coord(i, pi, Wb[:, 0:1, :])) ** (-1/sigma)
+
+    # === STEP 6: a'(z, b, a) for CONSTRAINED ===
+
+    # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
+    b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
+              + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
+              + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha)[0]) / (1 + r)
+
+    # interpolate this kappa -> b mapping to get b -> kappa
+    # then use the interpolated kappa to get a', so we have a'(z, b, a)
+    # (utils.interpolate.interpolate_y does this in one swoop, but since it works on last
+    #  axis, we need to swap kappa to last axis, and then b back to middle when done)
+    h_con = interpolate.interpolate_y(b_endo.swapaxes(1, 2), b_bhat_grid,
+                                      h_endo_con.swapaxes(1, 2)).swapaxes(1, 2)
+
+    # === STEP 7: obtain policy functions and update derivatives of value function ===
+
+    # combine unconstrained solution and constrained solution, choosing latter
+    # when unconstrained goes below minimum b
+    h_bhat, b_bhat = h_unc.copy(), b_unc.copy()
+    b_bhat[b_bhat <= b_bhat_grid[0]] = b_bhat_grid[0]
+    h_bhat[b_bhat <= b_bhat_grid[0]] = h_con[b_bhat <= b_bhat_grid[0]]
+
+    # calculate adjustment cost and its derivative
+    Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)
+
+    # solve out budget constraint to get consumption and marginal utility
+    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
+
+    # c_bhat[c_bhat<0] = 1e-8 # for numerical stability while converging
+
+    uc = c_bhat ** (-sigma)
+    
+    uh = theta*(h_bhat_grid[np.newaxis, np.newaxis, :]) ** (-sigma)
     
     uce_bhat = e_grid[:, np.newaxis, np.newaxis] * uc
 
