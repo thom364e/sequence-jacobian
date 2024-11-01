@@ -4,6 +4,7 @@ from scipy.interpolate import interp1d
 import hh_housing_v2
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 '''Part 1: Blocks'''
 @simple
@@ -21,7 +22,8 @@ def house_mkt_clearing(HBAR, H):
 
 '''Part 2: Hetinput functions'''
 def make_grids(bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
-    b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = 0.01)
+    b_bhat_grid = grids.agrid(amax=bmax, n=nB)
+    # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
     h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
     e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
@@ -80,17 +82,38 @@ def show_irfs(irfs_list, variables, labels=[" "], ylabel=r"Percentage points (de
     if len(irfs_list) != len(labels):
         labels = [" "] * len(irfs_list)
     n_var = len(variables)
-    fig, ax = plt.subplots(1, n_var, figsize=figsize, sharex=True)
+    n_cols = min(n_var, 3)
+    n_rows = math.ceil(n_var / 3)
+    print(n_rows, n_cols)
+
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=figsize, sharex=True)
+
+    if n_var > 1:
+        ax = ax.flatten()
+    
     for i in range(n_var):
         # plot all irfs
         for j, irf in enumerate(irfs_list):
-            ax[i].plot(100 * irf[variables[i]][:50], label=labels[j])
+            if j % 2 == 0:
+                ax[i].plot(100 * irf[variables[i]][:50], linewidth = 2.5, label=labels[j])
+            else :
+                ax[i].plot(100 * irf[variables[i]][:50], linewidth = 2.5, ls = '--', label=labels[j])
         ax[i].set_title(variables[i])
         ax[i].set_xlabel(r"$t$")
         if i==0:
             ax[i].set_ylabel(ylabel)
         ax[i].legend()
     plt.show()
+
+def calc_mpc(ss, ha_block):
+    MPC = np.zeros(ss.internals[ha_block]['D'].shape)
+    dc = (ss.internals[ha_block]['c_bhat'][:,1:,:]-ss.internals[ha_block]['c_bhat'][:,:-1,:])
+    dm = (1+ss['r'])*ss.internals[ha_block]['b_bhat_grid'][np.newaxis,1:,np.newaxis]-(1+ss['r'])*ss.internals[ha_block]['b_bhat_grid'][np.newaxis,:-1,np.newaxis]
+    MPC[:,:-1,:] = dc/dm
+    MPC[:,-1,:] = MPC[:,-1,:] # assuming constant MPC at end
+    mean_MPC = np.sum(MPC*ss.internals[ha_block]['D'])
+
+    return MPC, mean_MPC
 
 '''Old functions'''
 def policy_ss(Pi, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, tol=1E-12, max_iter=10_000, debug = False):
