@@ -130,6 +130,8 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
 @het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
 def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1):
+    
+    gamma_p = gamma(+1)
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
     Wb = beta * Vb_bhat_p

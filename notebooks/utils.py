@@ -8,21 +8,68 @@ import math
 
 '''Part 1: Blocks'''
 @simple
-def mkt_clearing(C_BHAT, Y, HBAR, H_BHAT, BBAR_BHAT, B_BHAT):
-    goods_mkt = Y - C_BHAT
-    house_mkt = HBAR - H_BHAT
-    asset_mkt = BBAR_BHAT - B_BHAT
-    return goods_mkt, house_mkt, asset_mkt
+def firm(N, w, Z, pi, mu, kappa):
+    # N = Y / Z
+    Y = Z * N
+    Div = Y - w * N - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y
+    return Y, Div
 
 @simple
-def house_mkt_clearing(HBAR, H):
-    house_mkt = HBAR - H
-    return house_mkt
+def monetary(pi, rstar, phi):
+    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+    r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
+    return r
+
+@simple
+def fiscal(r, BBAR, G):
+    Tax = r * BBAR + G
+    return Tax
+
+@simple
+def wage_res(C_BHAT, H_BHAT, N, varphi, nu, theta, sigma, w):
+    wage_res = varphi * N ** nu * 1 / theta * (C_BHAT**theta*H_BHAT**(1-theta))**sigma * (C_BHAT/H_BHAT)**(1-theta) - w
+    return wage_res
+
+@simple
+def mkt_clearing(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G):
+    asset_mkt = BBAR + gamma*qh*H_BHAT - B_BHAT
+    goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G
+    house_mkt = HBAR - H_BHAT
+    return asset_mkt, goods_mkt, house_mkt
+
+@simple 
+def qhouse_lag(qh):
+    qh_lag = qh(-1)
+    return qh_lag
+
+@simple
+def nkpc_ss(Z, mu):
+    w = Z / mu
+    return w
+
+@simple
+def nkpc(pi, w, Z, Y, r, mu, kappa):
+    nkpc_res = kappa * (w / Z - 1 / mu) + Y(+1) / Y * (1 + pi(+1)).apply(np.log) / (1 + r(+1))\
+               - (1 + pi).apply(np.log)
+    return nkpc_res
+
+# @solved(unknowns={'C_s': 1, 'C_b':1, 'lambda_b': 1, 'A': 1}, targets=["euler_s", "euler_b"])
+# def hh_ta(C_s, C_b, lambda_b, A, Z, eis, beta, r, lam):
+#     euler_s = (beta * (1 + r(+1))) ** (-eis) * C_s(+1) - C_s                         # euler for saver agent
+#     euler_b = (beta * (1 + r(+1))) ** (-eis) * C_b(+1) + (1 + r(+1))*lambda_b - C_b  # euler for borrower agent
+    
+#     housing_euler_s = (1 + r) * A(-1) + Z - C_s - A
+#     C_H2M = Z   # computes consumption of an hand to mouth agent
+#     C = (1 - lam) * C_RA + lam * C_H2M
+    
+#     budget_constraint = (1 + r) * A(-1) + Z - C - A
+    
+#     return euler_s, euler_b, budget_constraint, C_H2M, C
 
 
 '''Part 2: Hetinput functions'''
-def make_grids(bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
-    b_bhat_grid = grids.agrid(amax=bmax, n=nB)
+def make_grids(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
+    b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)
     # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
     h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
@@ -95,9 +142,9 @@ def show_irfs(irfs_list, variables, labels=[" "], ylabel=r"Percentage points (de
         # plot all irfs
         for j, irf in enumerate(irfs_list):
             if j % 2 == 0:
-                ax[i].plot(100 * irf[variables[i]][:50], linewidth = 2.5, label=labels[j])
+                ax[i].plot(100 * irf[variables[i]][:T_plot], linewidth = 2.5, label=labels[j])
             else :
-                ax[i].plot(100 * irf[variables[i]][:50], linewidth = 2.5, ls = '--', label=labels[j])
+                ax[i].plot(100 * irf[variables[i]][:T_plot], linewidth = 2.5, ls = '--', label=labels[j])
         ax[i].set_title(variables[i])
         ax[i].set_xlabel(r"$t$")
         if i==0:
