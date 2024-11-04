@@ -42,6 +42,16 @@ def qhouse_lag(qh):
     qh_lag = qh(-1)
     return qh_lag
 
+@simple 
+def qhouse_lag(qh):
+    qh_lag = qh(-1)
+    return qh_lag
+
+@simple 
+def gamma_prime(gamma):
+    gamma_p = gamma(-1)
+    return gamma_p
+
 @simple
 def nkpc_ss(Z, mu):
     w = Z / mu

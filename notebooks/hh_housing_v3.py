@@ -37,7 +37,8 @@ def marginal_cost_grid_housing(h_bhat_grid, alpha):
 # # policy and bacward order as in grid!
 @het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
-def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1):
+def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1, gamma_p):
+    
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
     Wb = beta * Vb_bhat_p
@@ -61,7 +62,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
 
     # solve out budget constraint to get b(z, b', h)
-    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
+    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
@@ -88,7 +89,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
 
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
     b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
-              + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
+              + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha)[0]) / (1 + r)
 
     # interpolate this kappa -> b mapping to get b -> kappa
@@ -110,7 +111,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)
 
     # solve out budget constraint to get consumption and marginal utility
-    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
+    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
 
     c_bhat[c_bhat<0] = 1e-8 # for numerical stability while converging
 
@@ -121,7 +122,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     uce_bhat = e_grid[:, np.newaxis, np.newaxis] * uc
 
     # update derivatives of value function using envelope conditions
-    Vh_bhat = (qh - (1 + r)*gamma*qh_lag - Psi2) * uc + uh
+    Vh_bhat = (qh - (1 + r)*gamma_p*qh_lag - Psi2) * uc + uh
     Vb_bhat = (1 + r) * uc
 
     return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat
@@ -131,7 +132,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
 def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1):
     
-    gamma_p = gamma(+1)
+    # gamma_p = gamma(+1)
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
     Wb = beta * Vb_bhat_p
@@ -152,7 +153,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
 
     # solve out budget constraint to get b(z, b', h)
-    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
+    b_endo = (c_endo_unc + qh*(1-gamma_p)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
@@ -177,7 +178,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # === STEP 6: a'(z, b, a) for CONSTRAINED ===
 
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
-    b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
+    b_endo = (c_endo_con + qh*(1-gamma_p)*h_endo_con
               + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha)[0]) / (1 + r)
 
@@ -200,7 +201,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)
 
     # solve out budget constraint to get consumption and marginal utility
-    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
+    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma_p)*h_bhat - b_bhat
 
     # c_bhat[c_bhat<0] = 1e-8 # for numerical stability while converging
 
