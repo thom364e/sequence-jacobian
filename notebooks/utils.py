@@ -16,8 +16,11 @@ def firm(N, w, Z, pi, mu, kappa):
 
 @simple
 def monetary(pi, rstar, phi):
+    # i = rstar + pi(1) + 0*phi
+    # r = i(-1) - pi
+    r = rstar(-1) - 0*pi + phi*0
     # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
-    r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
+    # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
     return r
 
 @simple
