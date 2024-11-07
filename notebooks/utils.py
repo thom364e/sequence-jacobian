@@ -25,8 +25,8 @@ def monetary(pi, rstar, phi):
     # i = rhoi*(i(-1)) + (1 - rhoi)*(rstar + phi * pi)
     # r = i(-1) - pi
 
-    # r = rstar(-1) - 0*pi + phi*0
-    r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+    r = rstar(-1) - 0*pi + phi*0
+    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
     # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
     return r
 
@@ -42,7 +42,7 @@ def wage_res(C_BHAT, H_BHAT, N, varphi, nu, theta, sigma, w):
 
 @simple
 def mkt_clearing(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G):
-    asset_mkt = BBAR + gamma*qh*H_BHAT - B_BHAT
+    asset_mkt = BBAR + gamma*qh*HBAR - B_BHAT
     goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G
     house_mkt = HBAR - H_BHAT
     return asset_mkt, goods_mkt, house_mkt
