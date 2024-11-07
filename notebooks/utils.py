@@ -25,8 +25,8 @@ def monetary(pi, rstar, phi):
     # i = rhoi*(i(-1)) + (1 - rhoi)*(rstar + phi * pi)
     # r = i(-1) - pi
 
-    r = rstar(-1) - 0*pi + phi*0
-    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+    # r = rstar(-1) - 0*pi + phi*0
+    r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
     # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
     return r
 
