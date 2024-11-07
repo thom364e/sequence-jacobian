@@ -16,10 +16,17 @@ def firm(N, w, Z, pi, mu, kappa):
 
 @simple
 def monetary(pi, rstar, phi):
+
+    # Real interest rate with Fisher effects
     # i = rstar + pi(1) + 0*phi
     # r = i(-1) - pi
-    r = rstar(-1) - 0*pi + phi*0
-    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+
+    # Taylor rule
+    # i = rhoi*(i(-1)) + (1 - rhoi)*(rstar + phi * pi)
+    # r = i(-1) - pi
+
+    # r = rstar(-1) - 0*pi + phi*0
+    r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
     # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
     return r
 
@@ -84,7 +91,7 @@ def nkpc(pi, w, Z, Y, r, mu, kappa):
 def make_grids(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
     b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)
     # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
-    h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
+    h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.001)
     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
     e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
 
