@@ -20,6 +20,7 @@ def monetary(pi, rstar, phi):
     # Real interest rate with Fisher effects
     # i = rstar + pi(1) + 0*phi
     # r = i(-1) - pi
+    # r = rstar(-1) + phi * pi(-1) - pi
 
     # Taylor rule
     # i = rhoi*(i(-1)) + (1 - rhoi)*(rstar + phi * pi)
