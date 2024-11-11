@@ -26,11 +26,12 @@ def finacial_cost(b, rborr):
     b_neg = b.copy()
     b_neg[b>0] = 0
     fin_cost = np.abs(b_neg*rborr)
+    # fin_cost = np.abs(b_neg*(rborr * b_neg**2))
     return fin_cost
 
 # policy and bacward order as in grid!
 @het(exogenous='Pi', policy=['b', 'a'], backward=['Vb', 'Va'],
-     hetinputs=[marginal_cost_grid], hetoutputs=[adjustment_costs], backward_init=hh_init)  
+     hetinputs=[marginal_cost_grid], hetoutputs=[adjustment_costs, finacial_cost], backward_init=hh_init)  
 def hh(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, chi0, chi1, chi2, Psi1, rborr):
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
@@ -38,9 +39,13 @@ def hh(Va_p, Vb_p, a_grid, b_grid, z_grid, e_grid, k_grid, beta, eis, rb, ra, ch
     Wa = beta * Va_p
     W_ratio = Wa / Wb
 
+    # rb_grid = b_grid.copy()
+    # rb_grid[:] = rb
+    # rb_grid[b_grid<0] = rb + rborr
+
     rb_grid = b_grid.copy()
     rb_grid[:] = rb
-    rb_grid[b_grid<0] = rb + rborr
+    rb_grid[b_grid<0] = rb + rborr #* b_grid[b_grid<0]**2
 
     # === STEP 3: a'(z, b', a) for UNCONSTRAINED ===
 
