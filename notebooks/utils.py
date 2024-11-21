@@ -15,7 +15,7 @@ def firm(N, w, Z, pi, mu, kappa):
     return Y, Div
 
 @simple
-def monetary(pi, rstar, phi):
+def monetary(pi, i):
 
     # Real interest rate with Fisher effects
     # i = rstar + pi(1) + 0*phi
@@ -27,9 +27,15 @@ def monetary(pi, rstar, phi):
     # r = i(-1) - pi
 
     # r = rstar(-1) - 0*pi + phi*0
-    r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
+    r = (1 + i(-1)) / (1 + pi) - 1
     # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
     return r
+
+@simple
+def taylor_simple(rstar, pi, phi):
+    i = rstar + phi * pi
+    return i
 
 @simple
 def fiscal(r, BBAR, G):
@@ -42,16 +48,48 @@ def wage_res(C_BHAT, H_BHAT, N, varphi, nu, theta, sigma, w):
     return wage_res
 
 @simple
+def wage_res_sep(C_BHAT, H_BHAT, N, varphi, nu, theta, sigma, w):
+    wage_res = varphi * N ** nu * C_BHAT**sigma - w
+    return wage_res
+
+@simple
 def mkt_clearing(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G):
     asset_mkt = BBAR + gamma*qh*HBAR - B_BHAT
     goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G
     house_mkt = HBAR - H_BHAT
     return asset_mkt, goods_mkt, house_mkt
 
-@simple 
-def qhouse_lag(qh):
-    qh_lag = qh(-1)
-    return qh_lag
+@simple
+def mkt_clearing_spread(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G, FIN_COST):
+    asset_mkt = BBAR + gamma*qh*HBAR - B_BHAT
+    goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G - FIN_COST
+    house_mkt = HBAR - H_BHAT
+    return asset_mkt, goods_mkt, house_mkt
+
+# @simple
+# def taylor(rstar, rhom, pi, phi, epsm):
+#     i = (1 + rstar)**(1 - rhom)*(1 + i(-1))**rhom*(1 + pi)**((1 - rhom)*phi)*(1+epsm) - 1
+#     return i
+
+# @simple
+# def taylor_lag(i):
+#     i_lag = i(-1)
+#     return i_lag
+
+@solved(unknowns={'i': (-0.1, 0.1)}, targets=['i_res'], solver="brentq")
+def taylor(i, rstar, rhom, pi, phi, epsm):
+    i_res = (1 + rstar)**(1 - rhom)*(1 + i(-1))**rhom*(1 + pi)**((1 - rhom)*phi)*(1+epsm) - 1 - i
+    return i_res
+
+@simple
+def real_rate(pi, i):
+    r = (1 + i(-1)) / (1 + pi) - 1
+    return r
+
+# @simple 
+# def qhouse_lag(qh_lag):
+#     qh = qh_lag(+1)
+#     return qh
 
 @simple 
 def qhouse_lag(qh):

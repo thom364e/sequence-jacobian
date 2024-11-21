@@ -19,6 +19,12 @@ def finacial_cost(a, rborr):
     fin_cost = np.abs(a_neg*(rborr * a_neg**2))
     return fin_cost
 
+def finacial_cost2(a, rborr):
+    a_neg = a.copy()
+    a_neg[a>0] = 0
+    fin_cost = np.abs(a_neg*(rborr * a_neg**2))
+    return fin_cost
+
 @het(exogenous='Pi', policy='a', backward='Va', backward_init=hh_init)
 def hh(Va_p, a_grid, we, T, r, beta, eis, frisch, vphi, rborr):
     '''Single backward step via EGM.'''
@@ -39,6 +45,7 @@ def hh(Va_p, a_grid, we, T, r, beta, eis, frisch, vphi, rborr):
 
     a = rhs + we[:, np.newaxis] * n + T[:, np.newaxis] - c
     iconst = np.nonzero(a < a_grid[0])
+    # print(rhs.shape, iconst[0])
     a[iconst] = a_grid[0]
 
     if iconst[0].size != 0 and iconst[1].size != 0:
@@ -50,6 +57,38 @@ def hh(Va_p, a_grid, we, T, r, beta, eis, frisch, vphi, rborr):
     
     return Va, a, c, n
 
+@het(exogenous='Pi', policy='a', backward='Va', backward_init=hh_init)
+def hh2(Va_p, a_grid, we, T, beta, eis, frisch, vphi, r_grid):
+    '''Single backward step via EGM.'''
+
+    # a_grid_neg = a_grid.copy()
+    # a_grid_neg[a_grid > 0] = 0
+    # r_grid = a_grid.copy()
+    # r_grid[:] = r
+    # r_grid[a_grid<0] = r + rborr * a_grid[a_grid<0]**2
+
+    uc_nextgrid = beta * Va_p
+    c_nextgrid, n_nextgrid = cn(uc_nextgrid, we[:, np.newaxis], eis, frisch, vphi)
+
+    lhs = c_nextgrid - we[:, np.newaxis] * n_nextgrid + a_grid[np.newaxis, :] - T[:, np.newaxis]
+    rhs = (1 + r_grid) * a_grid[np.newaxis, :]
+    
+    c = interpolate.interpolate_y(lhs, rhs, c_nextgrid)
+    n = interpolate.interpolate_y(lhs, rhs, n_nextgrid)
+
+    a = rhs + we[:, np.newaxis] * n + T[:, np.newaxis] - c
+    iconst = np.nonzero(a < a_grid[0])
+    print(rhs.shape, iconst[0])
+    a[iconst] = a_grid[0]
+
+    if iconst[0].size != 0 and iconst[1].size != 0:
+        c[iconst], n[iconst] = solve_cn(we[iconst[0]],
+                                        rhs[iconst[1]] + T[iconst[0]] - a_grid[0],
+                                        eis, frisch, vphi, Va_p[iconst])
+
+    Va = (1 + r_grid) * c ** (-1 / eis)
+    
+    return Va, a, c, n
 
 '''Supporting functions for HA block'''
 
