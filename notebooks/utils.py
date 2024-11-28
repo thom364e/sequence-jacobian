@@ -5,13 +5,16 @@ import hh_housing_v2
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+from numba import njit
+import hh_housing_v3
 
 '''Part 1: Blocks'''
 @simple
 def firm(N, w, Z, pi, mu, kappa):
     # N = Y / Z
     Y = Z * N
-    Div = Y - w * N - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y
+    # Div = Y - w * N - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y
+    Div = Y - w * N
     return Y, Div
 
 @simple
@@ -30,6 +33,11 @@ def monetary(pi, i):
     # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
     r = (1 + i(-1)) / (1 + pi) - 1
     # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
+    return r
+
+@simple
+def monetary_old(pi, rstar, phi):
+    r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
     return r
 
 @simple
@@ -55,7 +63,8 @@ def wage_res_sep(C_BHAT, H_BHAT, N, varphi, nu, theta, sigma, w):
 @simple
 def mkt_clearing(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G):
     asset_mkt = BBAR + gamma*qh*HBAR - B_BHAT
-    goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G
+    # goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G
+    goods_mkt = Y - C_BHAT - CHI - G
     house_mkt = HBAR - H_BHAT
     return asset_mkt, goods_mkt, house_mkt
 
@@ -65,6 +74,12 @@ def mkt_clearing_spread(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CH
     goods_mkt = Y - C_BHAT - mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y - CHI - G - FIN_COST
     house_mkt = HBAR - H_BHAT
     return asset_mkt, goods_mkt, house_mkt
+
+@simple
+def rotemberg_costs(Y, mu, kappa, pi):
+    rotemberg_cost = mu/(mu-1)/(2*kappa) * (1+pi).apply(np.log)**2 * Y
+    # rotemberg_cost = mu/(mu-1)/(2*kappa) * np.log(1+pi)**2 * Y
+    return rotemberg_cost
 
 # @simple
 # def taylor(rstar, rhom, pi, phi, epsm):
@@ -211,6 +226,65 @@ def show_irfs(irfs_list, variables, labels=[" "], ylabel=r"Percentage points (de
         ax[i].legend()
     plt.show()
 
+
+def standard_setup():
+        hh = hh_housing_v3.hh_housecons_sep
+        hh1 = hh.add_hetinputs([make_grids, income])
+
+        blocks_ss = [hh1, firm, monetary, fiscal, wage_res_sep, taylor_simple,
+                     mkt_clearing, nkpc_ss, qhouse_lag, gamma_prime, rotemberg_costs]
+        
+        hank_ss = create_model(blocks_ss, name="Housing HANK SS")
+
+        T = 300
+        unknowns = ['pi', 'w', 'N', 'qh']
+        targets = ['nkpc_res', 'asset_mkt', 'wage_res', 'house_mkt']
+        exogenous = ['rstar', 'Z', 'gamma']
+
+        blocks = [hh1, firm, monetary, fiscal, wage_res_sep, taylor_simple,
+                     mkt_clearing, nkpc, qhouse_lag, gamma_prime, rotemberg_costs]
+        
+        hank = create_model(blocks, name="Housing HANK")
+            
+        return hank_ss, hank, T, unknowns, targets, exogenous
+
+def model_setup(Calibration = None, unknowns_ss = None, targets_ss = None):
+    """ This function takes as input a calibration dictionary and returns the model object and the steady state object"""
+    hank_ss, hank, T, unknowns, targets, exogenous = standard_setup()
+
+    if unknowns_ss is None:    
+        unknowns_ss = {'beta': 0.983, 'varphi': 0.833, 'theta': 0.05}
+    else:
+        unknowns_ss = unknowns_ss
+    
+    if targets_ss is None:
+        targets_ss = {'goods_mkt': 0, 'wage_res': 0, 'house_mkt': 0}
+    else:
+        targets_ss = targets_ss
+
+    if Calibration is not None:
+        ss0 = hank_ss.solve_steady_state(Calibration, unknowns_ss, targets_ss, solver="hybr")
+        ss = hank.steady_state(ss0)
+
+        for k in ss0.keys():
+            assert np.all(np.isclose(ss[k], ss0[k])) # check that the steady state is the same 
+    else:
+        Calibration = {'gamma': 0.8, 'qh': 8.0, 'sigma': 1.0, 'alpha': 0.05, 'bmax': 45, 'rotemberg_cost': 0.0,
+            'hmax': 5.0, 'kmax': 2.0, 'nB': 50, 'nH': 70, 'nK': 50, 'nZ': 3, 'G': 0.0,
+            'rho_z': 0.966, 'sigma_z': 0.92, 'N': 1.0, 'Z': 1.0, 'pi': 0.0, 'mu': 1.2, 'bmin': 0.0,
+            'kappa': 0.1, 'rstar': 0.005, 'phi': 1.5, 'nu': 1.0, 'BBAR': 0.26, 'HBAR': 1.0}
+        Calibration['rstar'] = 0.03/4
+        Calibration['gamma'] = 0.8
+        Calibration['alpha'] = 0.0
+
+        ss0 = hank_ss.solve_steady_state(Calibration, unknowns_ss, targets_ss, solver="hybr")
+        ss = hank.steady_state(ss0)
+
+        for k in ss0.keys():
+            assert np.all(np.isclose(ss[k], ss0[k])) # check that the steady state is the same 
+
+    return hank, ss, T, unknowns, targets, Calibration
+
 def calc_mpc(ss, ha_block):
     MPC = np.zeros(ss.internals[ha_block]['D'].shape)
     dc = (ss.internals[ha_block]['c_bhat'][:,1:,:]-ss.internals[ha_block]['c_bhat'][:,:-1,:])
@@ -220,6 +294,33 @@ def calc_mpc(ss, ha_block):
     mean_MPC = np.sum(MPC*ss.internals[ha_block]['D'])
 
     return MPC, mean_MPC
+
+def manipulate_separable(M, E):
+    """ Here, E is the expectation matrix, M is the FIRE Jacobian """
+    T, m = M.shape
+    assert T == m
+    assert E.shape == (T, T)
+    
+    M_beh = np.empty_like(M)
+    for t in range(T):
+        for s in range(T):
+            summand = 0
+            for tau in range(min(s,t)+1):
+                if tau > 0:
+                    summand += (E[tau, s] - E[tau-1, s]) * M[t - tau, s - tau]
+                else:
+                    summand += E[tau, s] * M[t - tau, s - tau]
+            M_beh[t, s] = summand
+    return M_beh
+
+def E_sticky_exp(theta, T=300, sticky_info=False):
+    col = 1 - theta**(1 + np.arange(T))
+    E = np.tile(col[:, np.newaxis], (1, T))
+    if sticky_info:
+        return E
+    else:
+        E = np.triu(E, +1) + np.tril(np.ones((T, T)))
+        return E
 
 '''Old functions'''
 def policy_ss(Pi, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, tol=1E-12, max_iter=10_000, debug = False):
