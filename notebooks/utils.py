@@ -81,16 +81,6 @@ def rotemberg_costs(Y, mu, kappa, pi):
     # rotemberg_cost = mu/(mu-1)/(2*kappa) * np.log(1+pi)**2 * Y
     return rotemberg_cost
 
-# @simple
-# def taylor(rstar, rhom, pi, phi, epsm):
-#     i = (1 + rstar)**(1 - rhom)*(1 + i(-1))**rhom*(1 + pi)**((1 - rhom)*phi)*(1+epsm) - 1
-#     return i
-
-# @simple
-# def taylor_lag(i):
-#     i_lag = i(-1)
-#     return i_lag
-
 @solved(unknowns={'i': (-0.1, 0.1)}, targets=['i_res'], solver="brentq")
 def taylor(i, rstar, rhom, pi, phi, epsm):
     i_res = (1 + rstar)**(1 - rhom)*(1 + i(-1))**rhom*(1 + pi)**((1 - rhom)*phi)*(1+epsm) - 1 - i
