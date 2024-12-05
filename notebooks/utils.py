@@ -342,6 +342,16 @@ def calc_mpc(ss, ha_block):
 
     return MPC, mean_MPC
 
+def compute_mpc(D, c_bhat, rstar, b_bhat_grid):
+    mpc = np.zeros(D.shape)
+    dc = (c_bhat[:,1:,:]-c_bhat[:,:-1,:])
+    dm = (1+rstar)*b_bhat_grid[np.newaxis,1:,np.newaxis]-(1+rstar)*b_bhat_grid[np.newaxis,:-1,np.newaxis]
+    mpc[:,:-1,:] = dc/dm
+    mpc[:,-1,:] = mpc[:,-1,:] # assuming constant MPC at end
+    mean_MPC = np.sum(mpc*D)
+
+    return mpc
+
 def manipulate_separable(M, E):
     """ Here, E is the expectation matrix, M is the FIRE Jacobian """
     T, m = M.shape
