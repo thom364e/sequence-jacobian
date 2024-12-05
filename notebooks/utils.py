@@ -19,20 +19,8 @@ def firm(N, w, Z, pi, mu, kappa):
 
 @simple
 def monetary(pi, i):
-
-    # Real interest rate with Fisher effects
-    # i = rstar + pi(1) + 0*phi
-    # r = i(-1) - pi
-    # r = rstar(-1) + phi * pi(-1) - pi
-
-    # Taylor rule
-    # i = rhoi*(i(-1)) + (1 - rhoi)*(rstar + phi * pi)
-    # r = i(-1) - pi
-
-    # r = rstar(-1) - 0*pi + phi*0
-    # r = (1 + rstar(-1) + phi * pi(-1)) / (1 + pi) - 1
-    r = (1 + i(-1)) / (1 + pi) - 1
-    # r = (1 + rstar(-1) + phi * pi(-1)) - pi - 1
+    r = i(-1) - pi
+    # r = (1 + i(-1)) / (1 + pi) - 1
     return r
 
 @simple
@@ -88,7 +76,13 @@ def taylor(i, rstar, rhom, pi, phi, epsm):
 
 @simple
 def real_rate(pi, i):
+    # r = i(-1) - pi
     r = (1 + i(-1)) / (1 + pi) - 1
+    return r
+
+@simple
+def real_rate_nom(pi, i):
+    r = i(-1) - pi
     return r
 
 # @simple 
@@ -117,6 +111,33 @@ def nkpc(pi, w, Z, Y, r, mu, kappa):
                - (1 + pi).apply(np.log)
     return nkpc_res
 
+
+'''Part 1.2: Blocks for the sticky wages model'''
+@simple
+def nkpc_wage(pi, w, kappaw, varphi, N, muw, UCE_BHAT, beta, nu):
+    nkpc_res = kappaw * (varphi*N**(1+nu) - w*N/muw*UCE_BHAT) + beta * (1 + pi(+1)).apply(np.log)\
+                - (1 + pi).apply(np.log)
+    return nkpc_res
+
+@simple
+def real_wage(muw, Z):
+    w = Z/muw
+    return w 
+
+@simple
+def mkt_clearing_wage(B_BHAT, C_BHAT, Y, BBAR, HBAR, H_BHAT, CHI, qh, gamma, G):
+    asset_mkt = BBAR + gamma*qh*HBAR - B_BHAT
+    goods_mkt = Y - C_BHAT - CHI - G
+    house_mkt = HBAR - H_BHAT
+    return asset_mkt, goods_mkt, house_mkt
+
+@simple
+def firm_wage(N, w, Z):
+    # N = Y / Z
+    Y = Z * N
+    Div = Y - w * N
+    return Y, Div
+
 # @solved(unknowns={'C_s': 1, 'C_b':1, 'lambda_b': 1, 'A': 1}, targets=["euler_s", "euler_b"])
 # def hh_ta(C_s, C_b, lambda_b, A, Z, eis, beta, r, lam):
 #     euler_s = (beta * (1 + r(+1))) ** (-eis) * C_s(+1) - C_s                         # euler for saver agent
@@ -132,20 +153,70 @@ def nkpc(pi, w, Z, Y, r, mu, kappa):
 
 
 '''Part 2: Hetinput functions'''
-def make_grids(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
+
+def make_betas(beta_hi, dbeta, omega, q):
+    """Return beta grid [beta_hi-dbeta, beta_high] and transition matrix,
+    where q is probability of getting new random draw from [1-omega, omega]"""
+    beta_lo = beta_hi - dbeta
+    b_grid = np.array([beta_lo, beta_hi])
+    pi_b = np.array([1 - omega, omega])
+    Pi_b = (1-q)*np.eye(2) + q*np.outer(np.ones(2), pi_b)
+    return b_grid, Pi_b, pi_b
+
+def make_grids(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, beta_hi, dbeta, omega, q):
     b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)
-    # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
+
+    beta_grid_short, Pi_b, pi_b = make_betas(beta_hi, dbeta, omega, q)
+    
     h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.001)
     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
-    e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
+    e_grid_short, pi_e, Pi_e = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
 
-    # b_grid = np.zeros([nH,nB])
-    # for j_a in range(nH):
-    #     # grid for b, starting from the borrowing constraint
-    #     b_grid[j_a,:] = grids.agrid(amax=bmax, n=nB, amin = -qh_lag*gamma*h_bhat_grid[j_a])
+    e_grid = np.kron(np.ones_like(beta_grid_short), e_grid_short)
+    beta = np.kron(beta_grid_short, np.ones_like(e_grid_short))
 
-    return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, pi_e
+    Pi = np.kron(Pi_b, Pi_e)
+    pi_pdf = np.kron(pi_b, pi_e)
 
+    return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, pi_pdf, beta, pi_e
+
+# def make_grids(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
+#     b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)
+#     # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
+#     h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.001)
+#     k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
+#     e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
+
+#     # b_grid = np.zeros([nH,nB])
+#     # for j_a in range(nH):
+#     #     # grid for b, starting from the borrowing constraint
+#     #     b_grid[j_a,:] = grids.agrid(amax=bmax, n=nB, amin = -qh_lag*gamma*h_bhat_grid[j_a])
+
+#     return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, pi_e
+
+def income(e_grid, w, N, Div, Tax, pi_e, pi_pdf):
+    # hardwired incidence rules are proportional to skill; scale does not matter 
+    tax_rule, div_rule = e_grid, e_grid
+    # Pi_e_temp = np.tile(pi_e, 2)
+    div = Div / np.sum(pi_pdf * div_rule) * div_rule
+    tax = Tax / np.sum(pi_pdf * tax_rule) * tax_rule
+    T = div - tax
+
+    # wage per effective unit of labor
+    labor_income = w * e_grid * N
+    z_grid = labor_income + T
+
+    # # hardwired incidence rules are proportional to skill; scale does not matter 
+    # tax_rule, div_rule = e_grid, e_grid
+    # div = Div / np.sum(pi_e * div_rule) * div_rule
+    # tax = Tax / np.sum(pi_e * tax_rule) * tax_rule
+    # T = div - tax
+
+    # # wage per effective unit of labor
+    # labor_income = w * e_grid * N
+    # z_grid = labor_income + T
+
+    return z_grid
 
 def transfers(pi_e, Div, Tax, e_grid):
     # hardwired incidence rules are proportional to skill; scale does not matter 
@@ -155,24 +226,9 @@ def transfers(pi_e, Div, Tax, e_grid):
     T = div - tax
     return T
 
-
 def wages(w, e_grid):
     we = w * e_grid
     return we
-
-
-def income(e_grid, w, N, Div, Tax, pi_e):
-    # hardwired incidence rules are proportional to skill; scale does not matter 
-    tax_rule, div_rule = e_grid, e_grid
-    div = Div / np.sum(pi_e * div_rule) * div_rule
-    tax = Tax / np.sum(pi_e * tax_rule) * tax_rule
-    T = div - tax
-
-    # wage per effective unit of labor
-    labor_income = w * e_grid * N
-    z_grid = labor_income + T
-
-    return z_grid
 
 
 '''Part 3: Hetoutput functions'''
@@ -187,6 +243,7 @@ def compute_weighted_mpc(c, b, b_grid, r, e_grid):
     mpc = mpc * e_grid[:, np.newaxis]
     return mpc
 
+'''Part 4: Old blocks:'''
 
 '''Part 4: Miscellaneous functions'''
 def show_irfs(irfs_list, variables, labels=[" "], ylabel=r"Percentage points (dev. from ss)", T_plot=50, figsize=(18, 6)):

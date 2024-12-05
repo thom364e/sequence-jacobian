@@ -19,18 +19,19 @@ def hh_init(b_bhat_grid, h_bhat_grid, z_grid, sigma, theta):
     # Vh_bhat = (b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
     # Vb_bhat = (b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1 / sigma) * np.ones((z_grid.shape[0], 1, 1))
 
+    # print(Vh_bhat.shape, Vb_bhat.shape)
     return Vh_bhat, Vb_bhat
 
 
-def adjustment_costs_housing(h_bhat, h_bhat_grid, alpha):
-    chi = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)[0]
+def adjustment_costs_housing(h_bhat, h_bhat_grid, alpha, qh):
+    chi = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha, qh)[0]
     return chi
 
 
-def marginal_cost_grid_housing(h_bhat_grid, alpha):
+def marginal_cost_grid_housing(h_bhat_grid, alpha, qh):
     # precompute Psi1(a', a) on grid of (a', a) for steps 3 and 5
     Psi1 = get_PsiHousing_and_deriv(h_bhat_grid[:, np.newaxis],
-                                    h_bhat_grid[np.newaxis, :], alpha)[1]
+                                    h_bhat_grid[np.newaxis, :], alpha, qh)[1]
     return Psi1
 
 def finacial_cost(b_bhat, xi):
@@ -237,16 +238,18 @@ def hh_spread(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_
 def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, 
                      k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1, gamma_p):
     
+    # print(z_grid.shape, b_bhat_grid.shape, h_bhat_grid.shape, e_grid.shape, k_grid.shape)
+    # print(z_grid)
     # gamma_p = gamma(+1)
     # === STEP 2: Wb(z, b', a') and Wa(z, b', a') ===
     # (take discounted expectation of tomorrow's value function)
-    Wb = beta * Vb_bhat_p
-    Wh = beta * Vh_bhat_p
+    Wb = beta[:, np.newaxis, np.newaxis]*Vb_bhat_p
+    Wh = beta[:, np.newaxis, np.newaxis]*Vh_bhat_p
     W_ratio = Wh / Wb
 
     # === STEP 3: a'(z, b', a) for UNCONSTRAINED ===
 
-    # for each (z, b', a), linearly interpolate to find h' between gridpoints
+    # for each (z, b', h), linearly interpolate to find h' between gridpoints
     # satisfying optimality condition W_ratio == (1 - gamma)*qh + Psi1
     i, pi = lhs_equals_rhs_interpolate(W_ratio, (1 - gamma)*qh + Psi1)
 
@@ -259,7 +262,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
 
     # solve out budget constraint to get b(z, b', h)
     b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
-              + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha)[0]) / (1 + r)
+              + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
     # and also use interpolation to get a'(z, b, a)
@@ -285,7 +288,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
     b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
               + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
-              + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha)[0]) / (1 + r)
+              + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this kappa -> b mapping to get b -> kappa
     # then use the interpolated kappa to get a', so we have a'(z, b, a)
@@ -303,7 +306,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     h_bhat[b_bhat <= b_bhat_grid[0]] = h_con[b_bhat <= b_bhat_grid[0]]
 
     # calculate adjustment cost and its derivative
-    Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)
+    Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha, qh)
 
     # solve out budget constraint to get consumption and marginal utility
     c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
@@ -325,18 +328,29 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
 
 
 '''Supporting functions for HA block'''
-def get_PsiHousing_and_deriv(hp, h, alpha):
+# def get_PsiHousing_and_deriv(hp, h, alpha):
+#     """Adjustment cost Psi(hp, h) for housing"""
+
+#     # h = h + 1e-8  # avoid division by zero
+
+#     Psi = alpha / 2 * ((hp - h)/h)**2*h
+#     Psi1 = alpha * (hp - h)/h
+#     # Psi2 = alpha / 2 * (-2*(hp - h)/h**2 + (hp - h)**2/h**2)
+#     Psi2 = alpha / (2*h**2) * (-2*hp*(hp - h) + (hp - h)**2)
+
+#     return Psi, Psi1, Psi2
+
+def get_PsiHousing_and_deriv(hp, h, alpha, qh):
     """Adjustment cost Psi(hp, h) for housing"""
 
     # h = h + 1e-8  # avoid division by zero
 
-    Psi = alpha / 2 * ((hp - h)/h)**2*h
-    Psi1 = alpha * (hp - h)/h
+    Psi = alpha / 2 * ((hp - h)/h)**2*(h*qh)
+    Psi1 = (alpha*qh) * (hp - h)/h
     # Psi2 = alpha / 2 * (-2*(hp - h)/h**2 + (hp - h)**2/h**2)
-    Psi2 = alpha / (2*h**2) * (-2*hp*(hp - h) + (hp - h)**2)
+    Psi2 = (alpha*qh) / (2*h**2) * (-2*(hp - h)*hp - (hp - h)**2)
 
     return Psi, Psi1, Psi2
-
 
 def matrix_times_first_dim(A, X):
     """Take matrix A times vector X[:, i1, i2, i3, ... , in] separately
