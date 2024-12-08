@@ -114,7 +114,9 @@ def nkpc(pi, w, Z, Y, r, mu, kappa):
 
 '''Part 1.2: Blocks for the sticky wages model'''
 @simple
-def nkpc_wage(pi, w, kappaw, varphi, N, muw, UCE_BHAT, beta, nu):
+def nkpc_wage(pi, w, kappaw, varphi, N, muw, UCE_BHAT, beta_hi, omega, dbeta, nu):
+    
+    beta = omega * beta_hi + (1 - omega) * (beta_hi - dbeta)
     nkpc_res = kappaw * (varphi*N**(1+nu) - w*N/muw*UCE_BHAT) + beta * (1 + pi(+1)).apply(np.log)\
                 - (1 + pi).apply(np.log)
     return nkpc_res
@@ -338,6 +340,19 @@ def calc_mpc(ss, ha_block):
     dm = (1+ss['r'])*ss.internals[ha_block]['b_bhat_grid'][np.newaxis,1:,np.newaxis]-(1+ss['r'])*ss.internals[ha_block]['b_bhat_grid'][np.newaxis,:-1,np.newaxis]
     MPC[:,:-1,:] = dc/dm
     MPC[:,-1,:] = MPC[:,-1,:] # assuming constant MPC at end
+    mean_MPC = np.sum(MPC*ss.internals[ha_block]['D'])
+
+    return MPC, mean_MPC
+
+def calc_mpch(ss, ha_block):
+    """Calculates the MPC out of housing wealth"""
+    MPC = np.zeros(ss.internals[ha_block]['D'].shape)
+    dc = (ss.internals[ha_block]['c_bhat'][:,:,1:]-ss.internals[ha_block]['c_bhat'][:,:,:-1])
+    dh = ss['qh']*ss.internals[ha_block]['h_bhat_grid'][np.newaxis,np.newaxis,1:]-ss['qh']*ss.internals[ha_block]['h_bhat_grid'][np.newaxis,np.newaxis,:-1]
+    # print(dh.shape, dc.shape)
+    # print(dh)
+    MPC[:,:,:-1] = dc/dh
+    MPC[:,:,-1] = MPC[:,:,-1] # assuming constant MPC at end
     mean_MPC = np.sum(MPC*ss.internals[ha_block]['D'])
 
     return MPC, mean_MPC
