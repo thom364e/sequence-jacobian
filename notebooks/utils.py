@@ -220,6 +220,30 @@ def income(e_grid, w, N, Div, Tax, pi_e, pi_pdf):
 
     return z_grid
 
+
+def make_grids_old(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
+    b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)
+    # h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.01)
+    h_bhat_grid = grids.agrid(amax=hmax, n=nH, amin = 0.001)
+    k_grid = grids.agrid(amax=kmax, n=nK)[::-1].copy()
+    e_grid, pi_e, Pi = grids.markov_rouwenhorst(rho=rho_z, sigma=sigma_z, N=nZ)
+
+    return b_bhat_grid, h_bhat_grid, k_grid, e_grid, Pi, pi_e
+
+def income_old(e_grid, w, N, Div, Tax, pi_e):
+
+    # # hardwired incidence rules are proportional to skill; scale does not matter 
+    tax_rule, div_rule = e_grid, e_grid
+    div = Div / np.sum(pi_e * div_rule) * div_rule
+    tax = Tax / np.sum(pi_e * tax_rule) * tax_rule
+    T = div - tax
+
+    # wage per effective unit of labor
+    labor_income = w * e_grid * N
+    z_grid = labor_income + T
+
+    return z_grid
+
 def transfers(pi_e, Div, Tax, e_grid):
     # hardwired incidence rules are proportional to skill; scale does not matter 
     tax_rule, div_rule = e_grid, e_grid
