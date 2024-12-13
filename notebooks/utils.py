@@ -78,7 +78,8 @@ def taylor(i, rstar, rhom, pi, phi, epsm):
 def real_rate(pi, i):
     # r = i(-1) - pi
     r = (1 + i(-1)) / (1 + pi) - 1
-    return r
+    r_opp = r
+    return r, r_opp
 
 @simple
 def real_rate_nom(pi, i):

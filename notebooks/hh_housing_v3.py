@@ -8,6 +8,7 @@ from numba import njit
 
 from sequence_jacobian.blocks.het_block import het
 from sequence_jacobian import interpolate, grids
+from sequence_jacobian.utilities import misc
 
 def hh_init(b_bhat_grid, h_bhat_grid, z_grid, sigma, theta):
     Vh_bhat = (0.6 + 1.1 * b_bhat_grid[:, np.newaxis] + h_bhat_grid) ** (-1/sigma) * np.ones((z_grid.shape[0], 1, 1))
@@ -70,7 +71,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
 
     # solve out budget constraint to get b(z, b', h)
     b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
-              + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha)[0]) / (1 + r)
+              + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
     # and also use interpolation to get a'(z, b, a)
@@ -97,7 +98,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
     b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
               + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
-              + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha)[0]) / (1 + r)
+              + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this kappa -> b mapping to get b -> kappa
     # then use the interpolated kappa to get a', so we have a'(z, b, a)
@@ -115,7 +116,7 @@ def hh_housecons(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid,
     h_bhat[b_bhat <= b_bhat_grid[0]] = h_con[b_bhat <= b_bhat_grid[0]]
 
     # calculate adjustment cost and its derivative
-    Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha)
+    Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha, qh)
 
     # solve out budget constraint to get consumption and marginal utility
     c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
@@ -236,7 +237,7 @@ def hh_spread(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_
 @het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
 def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, 
-                     k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, alpha, Psi1, gamma_p):
+                     k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, r_opp, alpha, Psi1, gamma_p):
     
     # print(z_grid.shape, b_bhat_grid.shape, h_bhat_grid.shape, e_grid.shape, k_grid.shape)
     # print(z_grid)
@@ -261,7 +262,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
 
     # solve out budget constraint to get b(z, b', h)
-    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
+    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
@@ -287,7 +288,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
 
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
     b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
-              + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid)
+              + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this kappa -> b mapping to get b -> kappa
@@ -309,7 +310,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha, qh)
 
     # solve out budget constraint to get consumption and marginal utility
-    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
+    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
 
     # c_bhat[c_bhat<0] = 1e-8 # for numerical stability while converging
 
@@ -320,7 +321,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     uce_bhat = e_grid[:, np.newaxis, np.newaxis] * uc
 
     # update derivatives of value function using envelope conditions
-    Vh_bhat = (qh - (1 + r)*gamma_p*qh_lag - Psi2) * uc + uh
+    Vh_bhat = (qh - (1 + r_opp)*gamma_p*qh_lag - Psi2) * uc + uh
     Vb_bhat = (1 + r) * uc
 
     return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat
@@ -416,6 +417,24 @@ def hh_housecons_sep_old(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid,
     Vb_bhat = (1 + r) * uc
 
     return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat
+
+
+
+@het(exogenous='Pi', policy='b_rent', backward='Vb_rent', backward_init=hh_init)
+def hh(Vb_rent_p, b_rent_grid, y, r, beta, sigma):
+    uc_nextgrid = beta * Vb_rent_p
+    c_nextgrid = uc_nextgrid ** (-1/sigma)
+    coh = (1 + r) * b_rent_grid[np.newaxis, :] + y[:, np.newaxis]
+    b_rent = interpolate.interpolate_y(c_nextgrid + b_rent_grid, coh, b_rent_grid)
+    misc.setmin(b_rent, b_rent_grid[0])
+    c = coh - b_rent
+    Va = (1 + r) * c ** (-sigma)
+    return Va, b_rent, c
+
+def make_grids_renter(rho_e, sd_e, n_e, min_a, max_a, n_a):
+    e_grid, _, Pi = grids.markov_rouwenhorst(rho_e, sd_e, n_e)
+    a_grid = grids.asset_grid(min_a, max_a, n_a)
+    return e_grid, Pi, a_grid
 
 '''Supporting functions for HA block'''
 # def get_PsiHousing_and_deriv(hp, h, alpha):
