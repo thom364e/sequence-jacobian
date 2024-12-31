@@ -78,6 +78,7 @@ def taylor(i, rstar, rhom, pi, phi, epsm):
 def real_rate(pi, i):
     # r = i(-1) - pi
     r = (1 + i(-1)) / (1 + pi) - 1
+    # r = (1 + i) / (1 + pi) - 1
     r_opp = r
     return r, r_opp
 
@@ -85,6 +86,11 @@ def real_rate(pi, i):
 def real_rate_nom(pi, i):
     r = i(-1) - pi
     return r
+
+@simple
+def dummy_block(kappa, phi):
+    kappa_res = kappa - phi
+    return kappa_res
 
 # @simple 
 # def qhouse_lag(qh_lag):
@@ -94,7 +100,22 @@ def real_rate_nom(pi, i):
 @simple 
 def qhouse_lag(qh):
     qh_lag = qh(-1)
-    return qh_lag
+    qh_col = qh
+    return qh_lag, qh_col
+
+@simple 
+def qhouse_lag_decomp(qh):
+    qh_lag = qh.ss
+    qh_col = qh.ss
+    # print(qh_lag)
+    return qh_lag, qh_col
+
+@simple
+def mkt_clearing_decomp(B_BHAT, C_BHAT, Y, BBAR, pi, mu, kappa, HBAR, H_BHAT, CHI, qh, gamma, G):
+    asset_mkt = BBAR + gamma*qh.ss*HBAR - B_BHAT
+    goods_mkt = Y - C_BHAT - CHI - G
+    house_mkt = HBAR - H_BHAT
+    return asset_mkt, goods_mkt, house_mkt
 
 @simple 
 def gamma_prime(gamma):
@@ -114,12 +135,21 @@ def nkpc(pi, w, Z, Y, r, mu, kappa):
 
 
 '''Part 1.2: Blocks for the sticky wages model'''
+# @simple
+# def nkpc_wage(pi, w, kappaw, varphi, N, muw, UCE_BHAT, beta_hi, omega, dbeta, nu):
+    
+#     beta = omega * beta_hi + (1 - omega) * (beta_hi - dbeta)
+#     nkpc_res = kappaw * (varphi*N**(1+nu) - w*N/muw*UCE_BHAT) + beta * (1 + pi(+1)).apply(np.log)\
+#                 - (1 + pi).apply(np.log)
+#     return nkpc_res
+
 @simple
-def nkpc_wage(pi, w, kappaw, varphi, N, muw, UCE_BHAT, beta_hi, omega, dbeta, nu):
+def nkpc_wage(pi, kappaw, varphi, N, muw, beta_hi, omega, dbeta, nu, C_BHAT, sigma):
     
     beta = omega * beta_hi + (1 - omega) * (beta_hi - dbeta)
-    nkpc_res = kappaw * (varphi*N**(1+nu) - w*N/muw*UCE_BHAT) + beta * (1 + pi(+1)).apply(np.log)\
-                - (1 + pi).apply(np.log)
+
+    # Auclert Rognlie Straub (2024): Annual Review sticky wages Phillips curve 
+    nkpc_res = kappaw * (varphi*N**(nu) - C_BHAT**(-sigma)/muw) + beta * pi(+1) - pi
     return nkpc_res
 
 @simple
@@ -221,6 +251,22 @@ def income(e_grid, w, N, Div, Tax, pi_e, pi_pdf):
 
     return z_grid
 
+
+def make_grids_renter(rho_e, sd_e, n_e, min_a, max_a, n_a):
+    er_grid, _, Pi_r = grids.markov_rouwenhorst(rho_e, sd_e, n_e)
+    br_grid = grids.asset_grid(min_a, max_a, n_a)
+    return er_grid, Pi_r, br_grid
+
+def income_renter(w, N, e_grid, Div, Tax, pir, lambdaa):
+    tax_rule, div_rule = lambdaa*e_grid, lambdaa*e_grid
+    div_renter = Div / np.sum(pir * div_rule) * div_rule
+    tax_renter = Tax / np.sum(pir * tax_rule) * tax_rule
+
+    T = div_renter - tax_renter
+
+    labor_income_renter = w * e_grid * N
+    y = labor_income_renter + T
+    return y
 
 def make_grids_old(bmin, bmax, hmax, kmax, nB, nH, nK, nZ, rho_z, sigma_z, gamma, qh_lag):
     b_bhat_grid = grids.agrid(amax=bmax, n=nB, amin = bmin)

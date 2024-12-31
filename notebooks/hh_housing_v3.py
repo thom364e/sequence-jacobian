@@ -237,7 +237,7 @@ def hh_spread(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, k_
 @het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
 def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_grid, 
-                     k_grid, beta, gamma, theta, sigma, qh, qh_lag, r, r_opp, alpha, Psi1, gamma_p):
+                     k_grid, beta, gamma, theta, sigma, qh, qh_lag, qh_col, r, r_opp, alpha, Psi1, gamma_p):
     
     # print(z_grid.shape, b_bhat_grid.shape, h_bhat_grid.shape, e_grid.shape, k_grid.shape)
     # print(z_grid)
@@ -252,7 +252,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
 
     # for each (z, b', h), linearly interpolate to find h' between gridpoints
     # satisfying optimality condition W_ratio == (1 - gamma)*qh + Psi1
-    i, pi = lhs_equals_rhs_interpolate(W_ratio, (1 - gamma)*qh + Psi1)
+    i, pi = lhs_equals_rhs_interpolate(W_ratio, qh - gamma*qh_col + Psi1)
 
     # use same interpolation to get Wb and then c
     h_endo_unc = interpolate.apply_coord(i, pi, h_bhat_grid)
@@ -262,7 +262,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # === STEP 4: b'(z, b, a), a'(z, b, a) for UNCONSTRAINED ===
 
     # solve out budget constraint to get b(z, b', h)
-    b_endo = (c_endo_unc + qh*(1-gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid)
+    b_endo = (c_endo_unc + (qh-qh_col*gamma)*h_endo_unc + addouter(-z_grid, b_bhat_grid, -(qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_unc, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
     # interpolate this b' -> b mapping to get b -> b', so we have b'(z, b, a)
@@ -278,7 +278,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # for each (z, kappa, a), linearly interpolate to find a' between gridpoints
     # satisfying optimality condition W_ratio/(1+kappa) == (1-gamma)*qh + Psi1, assuming bhat'=0
     lhs_con = W_ratio[:, 0:1, :] / (1 + k_grid[np.newaxis, :, np.newaxis])
-    i, pi = lhs_equals_rhs_interpolate(lhs_con, (1 - gamma)*qh + Psi1)
+    i, pi = lhs_equals_rhs_interpolate(lhs_con, (qh - gamma*qh_col) + Psi1)
 
     # use same interpolation to get Wb and then c
     h_endo_con = interpolate.apply_coord(i, pi, h_bhat_grid)
@@ -287,7 +287,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     # === STEP 6: a'(z, b, a) for CONSTRAINED ===
 
     # solve out budget constraint to get b(z, kappa, a), enforcing b'=0
-    b_endo = (c_endo_con + qh*(1-gamma)*h_endo_con
+    b_endo = (c_endo_con + (qh-gamma*qh_col)*h_endo_con
               + addouter(-z_grid, np.full(len(k_grid), b_bhat_grid[0]), -(qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid)
               + get_PsiHousing_and_deriv(h_endo_con, h_bhat_grid, alpha, qh)[0]) / (1 + r)
 
@@ -310,7 +310,7 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     Psi, _, Psi2 = get_PsiHousing_and_deriv(h_bhat, h_bhat_grid, alpha, qh)
 
     # solve out budget constraint to get consumption and marginal utility
-    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid) - Psi - qh*(1-gamma)*h_bhat - b_bhat
+    c_bhat = addouter(z_grid, (1 + r) * b_bhat_grid, (qh - (1 + r_opp)*gamma_p*qh_lag) * h_bhat_grid) - Psi - (qh-gamma*qh_col)*h_bhat - b_bhat
 
     # c_bhat[c_bhat<0] = 1e-8 # for numerical stability while converging
 
@@ -324,7 +324,13 @@ def hh_housecons_sep(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid, e_g
     Vh_bhat = (qh - (1 + r_opp)*gamma_p*qh_lag - Psi2) * uc + uh
     Vb_bhat = (1 + r) * uc
 
-    return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat
+    c_bhat_unc = c_bhat.copy()
+    c_bhat_unc[b_bhat <= b_bhat_grid[0]] = 0
+
+    c_bhat_con = c_bhat.copy()
+    c_bhat_con[b_bhat > b_bhat_grid[0]] = 0
+
+    return Vh_bhat, Vb_bhat, h_bhat, b_bhat, c_bhat, uce_bhat, c_bhat_con, c_bhat_unc
 
 @het(exogenous='Pi', policy=['b_bhat', 'h_bhat'], backward=['Vb_bhat', 'Vh_bhat'],
      hetinputs=[marginal_cost_grid_housing], hetoutputs=[adjustment_costs_housing], backward_init=hh_init)  
@@ -420,21 +426,21 @@ def hh_housecons_sep_old(Vh_bhat_p, Vb_bhat_p, h_bhat_grid, b_bhat_grid, z_grid,
 
 
 
-@het(exogenous='Pi', policy='b_rent', backward='Vb_rent', backward_init=hh_init)
-def hh(Vb_rent_p, b_rent_grid, y, r, beta, sigma):
-    uc_nextgrid = beta * Vb_rent_p
-    c_nextgrid = uc_nextgrid ** (-1/sigma)
-    coh = (1 + r) * b_rent_grid[np.newaxis, :] + y[:, np.newaxis]
-    b_rent = interpolate.interpolate_y(c_nextgrid + b_rent_grid, coh, b_rent_grid)
-    misc.setmin(b_rent, b_rent_grid[0])
-    c = coh - b_rent
-    Va = (1 + r) * c ** (-sigma)
-    return Va, b_rent, c
+# def hh_init(br_grid, y, r, eis):
+#     coh = (1 + r) * br_grid[np.newaxis, :] + y[:, np.newaxis]
+#     Vbr = (1 + r) * (0.1 * coh) ** (-1 / eis)
+#     return Vbr
 
-def make_grids_renter(rho_e, sd_e, n_e, min_a, max_a, n_a):
-    e_grid, _, Pi = grids.markov_rouwenhorst(rho_e, sd_e, n_e)
-    a_grid = grids.asset_grid(min_a, max_a, n_a)
-    return e_grid, Pi, a_grid
+# @het(exogenous='Pi_rent', policy='br', backward='Va', backward_init=hh_init)
+# def hh(Vbr_p, br_grid, y, r, betar, sigma):
+#     uc_nextgrid = betar * Vbr_p
+#     c_nextgrid = uc_nextgrid ** (-1/sigma)
+#     coh = (1 + r) * br_grid[np.newaxis, :] + y[:, np.newaxis]
+#     br = interpolate.interpolate_y(c_nextgrid + br_grid, coh, br_grid)
+#     misc.setmin(br, br_grid[0])
+#     cr = coh - br
+#     Va = (1 + r) * cr ** (-sigma)
+#     return Va, br, cr
 
 '''Supporting functions for HA block'''
 # def get_PsiHousing_and_deriv(hp, h, alpha):
