@@ -394,6 +394,7 @@ def compare_with_empirical(irfs, model_ss, H = 16):
         ax[i].axhline(y=0.0, color='grey', linestyle='--', linewidth=1.0)
         ax[i].yaxis.set_major_formatter(formatter)
         ax[i].xaxis.set_major_locator(MultipleLocator(4))
+        ax[i].grid(True, alpha=0.3)
 
         if key != 'i':
             ax[i].set_ylabel('Percent from s.s.')
@@ -413,6 +414,8 @@ def compare_with_empirical(irfs, model_ss, H = 16):
         ax[i].set_position([pos.x0 + 0.17, pos.y0, pos.width, pos.height])
 
     plt.show()
+
+    return fig
 
 def steady_state_dist(model_ss, hh_name):
     fig, ax = plt.subplots(2, 3, figsize=(17.5*3/3,13*2/3+0.4))
@@ -1074,3 +1077,99 @@ def nonlinear_MPC(model_ss, irf_nonlin, H = 9):
         # ax.legend(frameon=False)
 
         return fig
+
+def different_shock_size(model_ss, impact_nonlin, impact_lin, shock_list_bps):
+        
+        fig, ax = plt.subplots()
+        
+        ax.plot(shock_list_bps, impact_nonlin/model_ss['C_BHAT'], 
+                label=r'Non-linear')
+        ax.plot(shock_list_bps, impact_lin/model_ss['C_BHAT'], 
+                label=r'Linear', linestyle='--')
+        ax.axhline(y=0.0, color='grey', linestyle='--', linewidth=1.0)
+        ax.axvline(x=0.0, color='grey', linestyle='--', linewidth=1.0)
+        
+        ax.tick_params(direction='in', top=True, bottom=True, left=True, right=True)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1f}'))
+        # ax.xaxis.set_major_locator(MultipleLocator(2))
+        ax.set_xlim(-225, 225)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlabel(r'Monetary policy shock $\epsilon_0^m$ (basis points)')
+        ax.set_ylabel(r'$dC_0$ (\% from steady state)')
+        # ax.legend(frameon=False)
+
+        return fig
+
+def distribution_3d(model_ss, dist, hh_name, dev_ss = False):
+    XX, YY = np.meshgrid(model_ss.internals[hh_name]['h_bhat_grid'],model_ss.internals[hh_name]['b_bhat_grid'])
+
+    if dev_ss:
+        dist = dist - model_ss.internals[hh_name]['D']
+    else:
+        dist = dist
+    bdmargdist = np.sum(dist, axis=0)
+    print(bdmargdist.shape)
+    b_lim = 55
+    h_lim = 4
+    bdmargdist[model_ss.internals[hh_name]['b_bhat_grid'] > b_lim] = np.nan
+    bdmargdist[:,model_ss.internals[hh_name]['h_bhat_grid'] > h_lim] = np.nan
+
+    fig = plt.figure(figsize=(12, 16))
+    ax = fig.add_subplot(111, projection='3d')
+    surf2 = ax.plot_surface(XX, YY, bdmargdist, cmap='coolwarm', alpha=0.85, label = ' z = 0',
+                            edgecolor='k', rcount = 20, ccount = 20)
+    ax.set_xlabel('Housing')
+    ax.set_ylabel('Voluntary equity')
+    ax.set_zlabel('Mass of agents')
+    ax.set_xlim(0, h_lim)
+    ax.set_ylim(0, b_lim)
+    ax.view_init(elev=30, azim=30)
+
+    fig.tight_layout()
+    plt.show()
+
+    return fig
+
+def policies_ltv_partial_eqilibrium(model_lin, irf_pe_95, irf_pe_60, hh_name):
+    fig, ax = plt.subplots()
+    b_grid = model_lin['ltv_baseline'].internals[hh_name]['b_bhat_grid']
+    h_grid = model_lin['ltv_baseline'].internals[hh_name]['h_bhat_grid']
+    t = 3
+    idx_h = 3
+    idx_z = 1
+    t_list = [0, 1]
+    print(h_grid[idx_h])
+    for t in t_list:
+        ax.plot(b_grid, irf_pe_95.internals[hh_name]['c_bhat'][t, idx_z, :, idx_h], label=fr'$t = $ {t}, $\rho^m = 0.95$')
+        ax.plot(b_grid, irf_pe_60.internals[hh_name]['c_bhat'][t, idx_z, :, idx_h], label=fr'$t = $ {t}, $\rho^m = 0.60$', ls='--')
+    ax.set_xlim(-0.25, 25)
+    ax.legend(frameon=False)
+
+    ax.tick_params(direction='in', top=True, bottom=True, left=True, right=True)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.2f}'))
+    ax.xaxis.set_major_locator(MultipleLocator(4))
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel(r'Voluntary equity $\hat{b}$')
+    ax.set_ylabel(r'$d c_t(\beta, e, \hat{b}, h)$ (Dev. from st.st.)')
+    ax.axhline(y=0.0, color='grey', linestyle='--', linewidth=1.0)
+    plt.show()
+
+    return fig
+
+def plot_ltv_partial_eqilibrium(irf_pe_95, irf_pe_60):
+    fig, ax = plt.subplots()
+    ax.plot(100*irf_pe_95['C_BHAT'][:50], label=r'$\rho^m = 0.95$')
+    ax.plot(100*irf_pe_60['C_BHAT'][:50], label=r'$\rho^m = 0.60$')
+    ax.legend(frameon=False)
+
+    ax.tick_params(direction='in', top=True, bottom=True, left=True, right=True)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1f}'))
+    ax.xaxis.set_major_locator(MultipleLocator(4))
+    ax.set_xlim(0, (4 * 7 + 1) - 1)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel('Quarters')
+    ax.set_ylabel('Percent from steady state')
+    ax.axhline(y=0.0, color='grey', linestyle='--', linewidth=1.0)
+    plt.show()
+
+    return fig

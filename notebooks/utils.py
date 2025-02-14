@@ -438,6 +438,61 @@ def compute_mpc(D, c_bhat, rstar, b_bhat_grid):
 
     return mpc
 
+def get_distribution(model_ss, irf, hh_name, T):
+    c_dist = np.zeros((irf.internals[hh_name]['c_bhat'].shape))
+    h_dist = np.zeros((irf.internals[hh_name]['c_bhat'].shape))
+    b_dist = np.zeros((irf.internals[hh_name]['c_bhat'].shape))
+    dist = np.zeros((irf.internals[hh_name]['c_bhat'].shape))
+    dist_beg = np.zeros((irf.internals[hh_name]['c_bhat'].shape))
+    for t in range(T):
+        dist[t] = (model_ss.internals[hh_name]['D'] + irf.internals[hh_name]['D'][t])
+        dist_beg[t] = (model_ss.internals[hh_name]['Dbeg'] + irf.internals[hh_name]['Dbeg'][t])
+        c_dist[t] = (model_ss.internals[hh_name]['D'] + irf.internals[hh_name]['D'][t]) \
+                  * (model_ss.internals[hh_name]['c_bhat'] + irf.internals[hh_name]['c_bhat'][t])
+        h_dist[t] = (model_ss.internals[hh_name]['D'] + irf.internals[hh_name]['D'][t]) \
+            * (model_ss.internals[hh_name]['h_bhat'] + irf.internals[hh_name]['h_bhat'][t])
+        b_dist[t] = (model_ss.internals[hh_name]['D'] + irf.internals[hh_name]['D'][t]) \
+            * (model_ss.internals[hh_name]['h_bhat'] + irf.internals[hh_name]['h_bhat'][t])
+    return c_dist, h_dist, b_dist, dist, dist_beg
+
+def get_policies(model_ss, irf, hh_name, t, devss = True):
+    c_pol_ss = model_ss.internals[hh_name]['c_bhat']
+    h_pol_ss = model_ss.internals[hh_name]['h_bhat']
+    b_pol_ss = model_ss.internals[hh_name]['b_bhat']
+
+    if devss:
+        c_pol_path = c_pol_ss + irf.internals[hh_name]['c_bhat']
+        h_pol_path = h_pol_ss + irf.internals[hh_name]['h_bhat']
+        b_pol_path = b_pol_ss + irf.internals[hh_name]['b_bhat']
+    else:
+        c_pol_path = irf.internals[hh_name]['c_bhat']
+        h_pol_path = irf.internals[hh_name]['h_bhat']
+        b_pol_path = irf.internals[hh_name]['b_bhat']
+
+    return c_pol_ss, h_pol_ss, b_pol_ss, c_pol_path[t], h_pol_path[t], b_pol_path[t]
+
+def get_b_grid(model_ss, irf, hh_name):
+    # returns the endogenous grid for b (T, nH x nB)
+    b_grid_ss = model_ss.internals[hh_name]['b_bhat_grid'][None,:] - model_ss['gamma'] * model_ss['qh'] \
+           * model_ss.internals[hh_name]['h_bhat_grid'][:,None]
+
+    gamma_level = model_ss['gamma'] + irf['gamma']
+    qh_level = model_ss['qh'] + irf['qh']
+    h_bhat_grid = model_ss.internals[hh_name]['h_bhat_grid']
+
+    # Initialize the time-varying grid
+    T = len(gamma_level)
+    nH = h_bhat_grid.shape[0]
+    nB = model_ss.internals[hh_name]['b_bhat_grid'].shape[0]
+    b_grid_path = np.zeros((T, nH, nB))
+
+    # Calculate the time-varying grid for each time step
+    for t in range(T):
+        b_grid_path[t] = model_ss.internals[hh_name]['b_bhat_grid'][None, :] - gamma_level[t] * qh_level[t] \
+                                 * h_bhat_grid[:, None]
+        # print(np.sum(gamma_level[t] * qh_level[t] * h_bhat_grid[:, None]))
+    return b_grid_ss, b_grid_path
+
 def manipulate_separable(M, E):
     """ Here, E is the expectation matrix, M is the FIRE Jacobian """
     T, m = M.shape
